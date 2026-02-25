@@ -15,6 +15,7 @@ This repository has been rebuilt into an event-driven e-commerce platform using:
 - `order-service` (port `8082`): Handles order requests and saga state transitions.
 - `inventory-service` (port `8083`): Maintains stock in Redis, reserves/rejects inventory.
 - `payment-service` (port `8084`): Processes payment requests and emits payment outcomes.
+- `user-service` (port `8085`): Handles user upsert commands and emits user events.
 - `common-events`: Shared Kafka contracts.
 
 ## Event Flow (Saga)
@@ -63,6 +64,7 @@ Start each service in separate terminals:
 ./mvnw -f order-service/pom.xml spring-boot:run
 ./mvnw -f inventory-service/pom.xml spring-boot:run
 ./mvnw -f payment-service/pom.xml spring-boot:run
+./mvnw -f user-service/pom.xml spring-boot:run
 ```
 
 ## GraphQL Endpoint
@@ -99,6 +101,25 @@ query {
     status
     reason
     totalAmount
+  }
+}
+```
+
+```graphql
+mutation {
+  upsertUser(input: {
+    name: "Aditya"
+    email: "aditya@example.com"
+  })
+}
+```
+
+```graphql
+query {
+  users {
+    id
+    name
+    email
   }
 }
 ```

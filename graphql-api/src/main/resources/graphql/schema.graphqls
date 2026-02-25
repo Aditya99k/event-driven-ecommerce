@@ -2,11 +2,14 @@ type Query {
   products: [Product!]!
   orders(userId: String): [Order!]!
   order(orderId: ID!): Order
+  users: [User!]!
+  user(userId: ID!): User
 }
 
 type Mutation {
   upsertProduct(input: UpsertProductInput!): ID!
   placeOrder(input: PlaceOrderInput!): ID!
+  upsertUser(input: UpsertUserInput!): ID!
 }
 
 type Product {
@@ -32,6 +35,12 @@ type OrderItem {
   unitPrice: Float!
 }
 
+type User {
+  id: ID!
+  name: String!
+  email: String!
+}
+
 input UpsertProductInput {
   productId: String
   name: String!
@@ -49,4 +58,10 @@ input OrderItemInput {
   productId: String!
   quantity: Int!
   unitPrice: Float!
+}
+
+input UpsertUserInput {
+  userId: String
+  name: String!
+  email: String!
 }

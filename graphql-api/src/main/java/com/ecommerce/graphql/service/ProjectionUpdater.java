@@ -5,6 +5,8 @@ import com.ecommerce.graphql.projection.OrderView;
 import com.ecommerce.graphql.projection.OrderViewRepository;
 import com.ecommerce.graphql.projection.ProductView;
 import com.ecommerce.graphql.projection.ProductViewRepository;
+import com.ecommerce.graphql.projection.UserView;
+import com.ecommerce.graphql.projection.UserViewRepository;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,10 +19,14 @@ public class ProjectionUpdater {
 
     private final ProductViewRepository productViewRepository;
     private final OrderViewRepository orderViewRepository;
+    private final UserViewRepository userViewRepository;
 
-    public ProjectionUpdater(ProductViewRepository productViewRepository, OrderViewRepository orderViewRepository) {
+    public ProjectionUpdater(ProductViewRepository productViewRepository,
+                             OrderViewRepository orderViewRepository,
+                             UserViewRepository userViewRepository) {
         this.productViewRepository = productViewRepository;
         this.orderViewRepository = orderViewRepository;
+        this.userViewRepository = userViewRepository;
     }
 
     @KafkaListener(topics = TopicNames.PRODUCT_UPSERTED, groupId = "graphql-api")
@@ -80,6 +86,17 @@ public class ProjectionUpdater {
             view.setReason(event.status());
             orderViewRepository.save(view);
         });
+    }
+
+    @KafkaListener(topics = TopicNames.USER_UPSERTED, groupId = "graphql-api")
+    public void onUserUpserted(ConsumerRecord<String, UserUpsertedEvent> record) {
+        UserUpsertedEvent event = record.value();
+        logConsume(record.topic(), record.partition(), record.offset(), record.timestamp(), record.key(), event);
+        UserView view = new UserView();
+        view.setId(event.userId());
+        view.setName(event.name());
+        view.setEmail(event.email());
+        userViewRepository.save(view);
     }
 
     private void logConsume(String topic, int partition, long offset, long timestamp, String key, Object payload) {

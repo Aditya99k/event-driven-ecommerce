@@ -18,4 +18,9 @@ public class KafkaTopicsConfig {
     NewTopic productUpsertCommandTopic() {
         return TopicBuilder.name(TopicNames.PRODUCT_UPSERT_COMMAND).partitions(3).replicas(1).build();
     }
+
+    @Bean
+    NewTopic userUpsertCommandTopic() {
+        return TopicBuilder.name(TopicNames.USER_UPSERT_COMMAND).partitions(3).replicas(1).build();
+    }
 }

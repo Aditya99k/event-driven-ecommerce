@@ -1,9 +1,9 @@
 package com.ecommerce.graphql.service;
 
 import com.ecommerce.events.*;
-import com.ecommerce.graphql.dto.OrderItemInput;
 import com.ecommerce.graphql.dto.PlaceOrderInput;
 import com.ecommerce.graphql.dto.UpsertProductInput;
+import com.ecommerce.graphql.dto.UpsertUserInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -48,6 +48,20 @@ public class CommandPublisher {
         );
         sendEvent(TopicNames.PRODUCT_UPSERT_COMMAND, productId, command);
         return productId;
+    }
+
+    public String upsertUser(UpsertUserInput input) {
+        String userId = input.userId() == null || input.userId().isBlank()
+                ? UUID.randomUUID().toString()
+                : input.userId();
+
+        UserUpsertCommand command = new UserUpsertCommand(
+                userId,
+                input.name(),
+                input.email()
+        );
+        sendEvent(TopicNames.USER_UPSERT_COMMAND, userId, command);
+        return userId;
     }
 
     private void sendEvent(String topic, String key, Object payload) {

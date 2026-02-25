@@ -1,0 +1,36 @@
+<configuration>
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="unknown-service"/>
+    <springProperty scope="context" name="logstashHost" source="logging.logstash.host" defaultValue="localhost"/>
+    <springProperty scope="context" name="logstashPort" source="logging.logstash.port" defaultValue="5000"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+        <destination>${logstashHost}:${logstashPort}</destination>
+        <keepAliveDuration>5 minutes</keepAliveDuration>
+        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+            <providers>
+                <timestamp>
+                    <timeZone>UTC</timeZone>
+                </timestamp>
+                <version/>
+                <pattern>
+                    <pattern>{"service":"${appName}","level":"%level","logger":"%logger{40}","thread":"%thread"}</pattern>
+                </pattern>
+                <mdc/>
+                <message/>
+                <arguments/>
+                <stackTrace/>
+            </providers>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="LOGSTASH"/>
+    </root>
+</configuration>
