@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        - id: graphql-api
+          uri: http://localhost:8080
+          predicates:
+            - Path=/graphql,/graphiql,/graphiql/**
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods:
+              - GET
+              - POST
+              - OPTIONS
+            allowedHeaders: "*"
+
+server:
+  port: 8090
+
+security:
+  jwt:
+    enabled: true
+    secret: change-me-to-a-very-long-jwt-secret-key
+    public-paths:
+      - /actuator/health
+      - /actuator/info
+      - /auth/token
+      - /graphiql
+      - /graphiql/**
+
+logging:
+  logstash:
+    host: localhost
+    port: 5044
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

@@ -11,6 +11,7 @@ This repository has been rebuilt into an event-driven e-commerce platform using:
 ## Services
 
 - `graphql-api` (port `8080`): GraphQL entrypoint for queries/mutations. Publishes commands and maintains read projections.
+- `api-gateway` (port `8090`): Edge gateway for GraphQL with JWT guard and correlation-id tracing.
 - `catalog-service` (port `8081`): Handles product upsert commands and emits product events.
 - `order-service` (port `8082`): Handles order requests and saga state transitions.
 - `inventory-service` (port `8083`): Maintains stock in Redis, reserves/rejects inventory.
@@ -59,6 +60,7 @@ Infra endpoints:
 Start each service in separate terminals:
 
 ```bash
+./mvnw -f api-gateway/pom.xml spring-boot:run
 ./mvnw -f graphql-api/pom.xml spring-boot:run
 ./mvnw -f catalog-service/pom.xml spring-boot:run
 ./mvnw -f order-service/pom.xml spring-boot:run
@@ -69,8 +71,44 @@ Start each service in separate terminals:
 
 ## GraphQL Endpoint
 
-- URL: `http://localhost:8080/graphql`
-- GraphiQL: `http://localhost:8080/graphiql`
+- Direct URL: `http://localhost:8080/graphql`
+- Through Gateway: `http://localhost:8090/graphql`
+- GraphiQL direct: `http://localhost:8080/graphiql`
+- GraphiQL through gateway: `http://localhost:8090/graphiql`
+
+## API Gateway Notes
+
+- Gateway runs on `8090` and routes `/graphql` and `/graphiql/**` to `graphql-api`.
+- JWT validation is enabled by default for non-public paths (`security.jwt.enabled=true`).
+- Public paths: `/actuator/health`, `/actuator/info`, `/auth/token`, `/graphiql`, `/graphiql/**`.
+- Protected call example:
+  - Add header: `Authorization: Bearer <jwt-token>`
+- Correlation header:
+  - Gateway injects `X-Correlation-Id` (or propagates existing one) for request tracing.
+
+### Generate JWT for local testing
+
+Request:
+
+```bash
+curl -X POST http://localhost:8090/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "user-1",
+    "name": "Aditya",
+    "email": "aditya@example.com",
+    "ttlSeconds": 3600
+  }'
+```
+
+Then call GraphQL through gateway:
+
+```bash
+curl -X POST http://localhost:8090/graphql \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token-from-auth-response>" \
+  -d '{"query":"query { users { id name email } }"}'
+```
 
 ## Sample Mutations / Queries
 
