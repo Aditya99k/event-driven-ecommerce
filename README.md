@@ -5,6 +5,7 @@ This repository has been rebuilt into an event-driven e-commerce platform using:
 - MongoDB (service data + GraphQL read models)
 - Redis (inventory stock state)
 - GraphQL (gateway/BFF)
+- ELK (centralized log aggregation and search)
 - Spring Boot (microservices)
 
 ## Services
@@ -38,6 +39,14 @@ This repository has been rebuilt into an event-driven e-commerce platform using:
 docker compose up -d
 ```
 
+Infra endpoints:
+- Kafka: `localhost:9092`
+- MongoDB: `localhost:27017`
+- Redis: `localhost:6379`
+- Elasticsearch: `http://localhost:9200`
+- Logstash TCP input: `localhost:5044`
+- Kibana: `http://localhost:5601`
+
 ## Build
 
 ```bash
@@ -49,11 +58,11 @@ docker compose up -d
 Start each service in separate terminals:
 
 ```bash
-./mvnw -pl graphql-api spring-boot:run
-./mvnw -pl catalog-service spring-boot:run
-./mvnw -pl order-service spring-boot:run
-./mvnw -pl inventory-service spring-boot:run
-./mvnw -pl payment-service spring-boot:run
+./mvnw -f graphql-api/pom.xml spring-boot:run
+./mvnw -f catalog-service/pom.xml spring-boot:run
+./mvnw -f order-service/pom.xml spring-boot:run
+./mvnw -f inventory-service/pom.xml spring-boot:run
+./mvnw -f payment-service/pom.xml spring-boot:run
 ```
 
 ## GraphQL Endpoint
@@ -93,3 +102,18 @@ query {
   }
 }
 ```
+
+## Kibana Log Verification
+
+Each service now writes structured JSON logs to Logstash over TCP (`localhost:5044`) and those logs are indexed in Elasticsearch.
+
+1. Open Kibana at `http://localhost:5601`
+2. Go to **Stack Management** -> **Data Views**
+3. Create data view with pattern: `ecommerce-logs-*`
+4. In **Discover**, filter logs with queries like:
+   - `service : "order-service"`
+   - `message : "Kafka produced"`
+   - `message : "Kafka consumed"`
+   - `message : "order.created"`
+
+Kafka metadata (`topic`, `partition`, `offset`, `key`, `payload`) is included inside log messages emitted by producers/consumers.
