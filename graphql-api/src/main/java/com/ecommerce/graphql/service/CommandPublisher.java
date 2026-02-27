@@ -4,11 +4,15 @@ import com.ecommerce.events.*;
 import com.ecommerce.graphql.dto.PlaceOrderInput;
 import com.ecommerce.graphql.dto.UpsertProductInput;
 import com.ecommerce.graphql.dto.UpsertUserInput;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -65,15 +69,28 @@ public class CommandPublisher {
     }
 
     private void sendEvent(String topic, String key, Object payload) {
-        kafkaTemplate.send(topic, key, payload).whenComplete((result, ex) -> {
+        String correlationId = currentCorrelationId();
+        ProducerRecord<String, Object> record = new ProducerRecord<>(topic, key, payload);
+        record.headers().add(TraceHeaders.CORRELATION_ID, correlationId.getBytes(StandardCharsets.UTF_8));
+
+        kafkaTemplate.send(record).whenComplete((result, ex) -> {
             if (ex != null) {
-                log.error("Kafka produce failed: topic={} key={} payload={} error={}",
-                        topic, key, payload, ex.getMessage(), ex);
+                log.error("Kafka produce failed: correlationId={} topic={} key={} payload={} error={}",
+                        correlationId, topic, key, payload, ex.getMessage(), ex);
                 return;
             }
             var metadata = result.getRecordMetadata();
-            log.info("Kafka produced: topic={} partition={} offset={} timestamp={} key={} payload={}",
-                    metadata.topic(), metadata.partition(), metadata.offset(), metadata.timestamp(), key, payload);
+            log.info("Kafka produced: correlationId={} topic={} partition={} offset={} timestamp={} key={} payload={}",
+                    correlationId, metadata.topic(), metadata.partition(), metadata.offset(), metadata.timestamp(), key, payload);
         });
+    }
+
+    private String currentCorrelationId() {
+        String correlationId = MDC.get(TraceHeaders.CORRELATION_ID);
+        if (!StringUtils.hasText(correlationId)) {
+            correlationId = UUID.randomUUID().toString();
+            MDC.put(TraceHeaders.CORRELATION_ID, correlationId);
+        }
+        return correlationId;
     }
 }

@@ -8,6 +8,18 @@ This repository has been rebuilt into an event-driven e-commerce platform using:
 - ELK (centralized log aggregation and search)
 - Spring Boot (microservices)
 
+## Production-Grade Hardening Added
+
+- End-to-end correlation tracing:
+  - `X-Correlation-Id` is accepted/generated at gateway and propagated through GraphQL and Kafka headers.
+  - Consumer services load correlation into MDC so all logs are traceable by one correlation id.
+- Idempotent order creation:
+  - `order-service` ignores duplicate `order.requested` events for an already existing `orderId`.
+- Payment compensation:
+  - `inventory-service` stores reservation snapshots per order.
+  - On `payment.failed`, stock is automatically restored.
+  - On `payment.completed`, reservation snapshot is cleared.
+
 ## Services
 
 - `graphql-api` (port `8080`): GraphQL entrypoint for queries/mutations. Publishes commands and maintains read projections.
@@ -174,5 +186,6 @@ Each service now writes structured JSON logs to Logstash over TCP (`localhost:50
    - `message : "Kafka produced"`
    - `message : "Kafka consumed"`
    - `message : "order.created"`
+   - `correlationId : "<X-Correlation-Id value>"`
 
 Kafka metadata (`topic`, `partition`, `offset`, `key`, `payload`) is included inside log messages emitted by producers/consumers.
