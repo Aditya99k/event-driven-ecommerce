@@ -47,6 +47,182 @@ This repository has been rebuilt into an event-driven e-commerce platform using:
 8. `order-service` updates final status and emits `order.status-changed`
 9. `graphql-api` consumes events and updates MongoDB projections for queries.
 
+## Detailed Architecture and Topic-Level Flow
+
+### High-Level Data/Control Flow
+
+```mermaid
+flowchart LR
+    Client["Client (Postman/Web App)"] --> APIGW["api-gateway :8090\nJWT + CorrelationId"]
+    APIGW --> GQL["graphql-api :8080\nGraphQL BFF + Command Publisher + Projections"]
+
+    subgraph Kafka["Kafka Topics"]
+      T1["catalog.product-upsert-command"]
+      T2["catalog.product-upserted"]
+      T3["user.upsert-command"]
+      T4["user.upserted"]
+      T5["order.requested"]
+      T6["order.created"]
+      T7["inventory.reserved"]
+      T8["inventory.rejected"]
+      T9["payment.requested"]
+      T10["payment.completed"]
+      T11["payment.failed"]
+      T12["order.status-changed"]
+    end
+
+    GQL -->|produce| T1
+    GQL -->|produce| T3
+    GQL -->|produce| T5
+
+    T1 -->|consume| CATALOG["catalog-service :8081\nMongo owner: catalog-db.products"]
+    CATALOG -->|produce| T2
+
+    T3 -->|consume| USER["user-service :8085\nMongo owner: user-db.users"]
+    USER -->|produce| T4
+
+    T5 -->|consume| ORDER["order-service :8082\nMongo owner: order-db.orders\nIdempotent order create"]
+    ORDER -->|produce| T6
+
+    T6 -->|consume| INVENTORY["inventory-service :8083\nRedis owner: inventory stock + reservation snapshots"]
+    INVENTORY -->|produce| T7
+    INVENTORY -->|produce| T8
+
+    T7 -->|consume| ORDER
+    ORDER -->|produce| T9
+
+    T9 -->|consume| PAYMENT["payment-service :8084\nPayment decision service"]
+    PAYMENT -->|produce| T10
+    PAYMENT -->|produce| T11
+
+    T10 -->|consume| ORDER
+    T11 -->|consume| ORDER
+    ORDER -->|produce| T12
+
+    T11 -->|consume compensation| INVENTORY
+    T10 -->|consume cleanup| INVENTORY
+
+    T2 -->|consume projection| GQL
+    T4 -->|consume projection| GQL
+    T6 -->|consume projection| GQL
+    T8 -->|consume projection| GQL
+    T10 -->|consume projection| GQL
+    T12 -->|consume projection| GQL
+
+    GQL --> GQLDB["graphql-db\nproduct_view, user_view, order_view"]
+    Client <-->|query/mutation| APIGW
+```
+
+### Detailed Sequence (Mutation to Final State)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User Client
+    participant GW as api-gateway
+    participant GQ as graphql-api
+    participant K as Kafka
+    participant CS as catalog-service
+    participant US as user-service
+    participant OS as order-service
+    participant IS as inventory-service
+    participant PS as payment-service
+    participant M1 as catalog-db
+    participant M2 as user-db
+    participant M3 as order-db
+    participant R as Redis
+    participant MV as graphql-db views
+
+    Note over U,GW: All protected requests carry Authorization Bearer JWT
+    Note over GW,GQ: X-Correlation-Id generated/propagated
+
+    U->>GW: mutation upsertUser(input)
+    GW->>GQ: /graphql + JWT + X-Correlation-Id
+    GQ->>K: produce user.upsert-command
+    K->>US: consume user.upsert-command
+    US->>M2: save users
+    US->>K: produce user.upserted
+    K->>GQ: consume user.upserted
+    GQ->>MV: upsert user_view
+
+    U->>GW: mutation upsertProduct(input)
+    GW->>GQ: /graphql + JWT + X-Correlation-Id
+    GQ->>K: produce catalog.product-upsert-command
+    K->>CS: consume catalog.product-upsert-command
+    CS->>M1: save products
+    CS->>K: produce catalog.product-upserted
+    K->>IS: consume catalog.product-upserted
+    IS->>R: set inventory:stock:<productId>
+    K->>GQ: consume catalog.product-upserted
+    GQ->>MV: upsert product_view
+
+    U->>GW: mutation placeOrder(input userId/items)
+    GW->>GQ: /graphql + JWT + X-Correlation-Id
+    GQ->>K: produce order.requested
+    K->>OS: consume order.requested
+    OS->>M3: idempotency check + save order CREATED
+    OS->>K: produce order.created
+    K->>IS: consume order.created
+    IS->>R: stock check + decrement + reserve snapshot(orderId)
+
+    alt Stock insufficient
+        IS->>K: produce inventory.rejected
+        K->>OS: consume inventory.rejected
+        OS->>M3: update order INVENTORY_REJECTED
+        OS->>K: produce order.status-changed
+        K->>GQ: consume inventory.rejected/order.status-changed
+        GQ->>MV: update order_view rejected
+    else Stock reserved
+        IS->>K: produce inventory.reserved
+        K->>OS: consume inventory.reserved
+        OS->>M3: update order INVENTORY_RESERVED
+        OS->>K: produce order.status-changed
+        OS->>K: produce payment.requested
+        K->>PS: consume payment.requested
+
+        alt Payment success
+            PS->>K: produce payment.completed
+            K->>OS: consume payment.completed
+            OS->>M3: update order PAYMENT_COMPLETED
+            OS->>K: produce order.status-changed
+            K->>IS: consume payment.completed
+            IS->>R: delete reservation snapshot(orderId)
+            K->>GQ: consume payment.completed/order.status-changed
+            GQ->>MV: update order_view completed
+        else Payment failure
+            PS->>K: produce payment.failed
+            K->>OS: consume payment.failed
+            OS->>M3: update order PAYMENT_FAILED
+            OS->>K: produce order.status-changed
+            K->>IS: consume payment.failed
+            IS->>R: restore stock from reservation snapshot + delete snapshot
+            K->>GQ: consume order.status-changed
+            GQ->>MV: update order_view failed
+        end
+    end
+```
+
+### Service Responsibility and Topic Matrix
+
+| Service | Owns Data | Consumes Topics | Produces Topics | Core Work |
+|---|---|---|---|---|
+| `api-gateway` | none | HTTP | HTTP (forward) | JWT validation, `X-Correlation-Id` generation/propagation, routing to GraphQL |
+| `graphql-api` | `graphql-db.product_view`, `graphql-db.user_view`, `graphql-db.order_view` | `catalog.product-upserted`, `user.upserted`, `order.created`, `inventory.rejected`, `payment.completed`, `order.status-changed` | `catalog.product-upsert-command`, `user.upsert-command`, `order.requested` | BFF layer, command publishing, read-model projection updates |
+| `catalog-service` | `catalog-db.products` | `catalog.product-upsert-command` | `catalog.product-upserted` | Product upsert write model |
+| `user-service` | `user-db.users` | `user.upsert-command` | `user.upserted` | User upsert write model |
+| `order-service` | `order-db.orders` | `order.requested`, `inventory.reserved`, `inventory.rejected`, `payment.completed`, `payment.failed` | `order.created`, `payment.requested`, `order.status-changed` | Order lifecycle, idempotency guard, saga transitions |
+| `inventory-service` | Redis keys `inventory:stock:*`, `inventory:reservation:*` | `catalog.product-upserted`, `order.created`, `payment.completed`, `payment.failed` | `inventory.reserved`, `inventory.rejected` | Stock reservation, compensation restore on payment failure |
+| `payment-service` | none (event-driven decisioning) | `payment.requested` | `payment.completed`, `payment.failed` | Payment outcome simulation |
+
+### Traceability Guarantees
+
+- HTTP request path: `Client -> api-gateway -> graphql-api` carries `X-Correlation-Id`.
+- Kafka path: producers attach `X-Correlation-Id` in Kafka headers.
+- Consumers extract header and load into MDC before processing.
+- Logs include `correlationId`, topic, partition, offset, timestamp, key, payload.
+- Kibana can trace one request across all services using:
+  - `correlationId : "<value>"`
+
 ## Run Infra
 
 ```bash
