@@ -5,7 +5,7 @@ spring:
     gateway:
       routes:
         - id: graphql-api
-          uri: http://localhost:8080
+          uri: ${GRAPHQL_API_URI:http://localhost:8080}
           predicates:
             - Path=/graphql,/graphiql,/graphiql/**
       globalcors:

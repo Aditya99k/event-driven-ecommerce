@@ -15,10 +15,16 @@ This repository has been rebuilt into an event-driven e-commerce platform using:
   - Consumer services load correlation into MDC so all logs are traceable by one correlation id.
 - Idempotent order creation:
   - `order-service` ignores duplicate `order.requested` events for an already existing `orderId`.
+- Idempotent payment consumer:
+  - `payment-service` stores terminal processing markers in `payment-db.payment_process_marker` keyed by `orderId`.
+  - Duplicate `payment.requested` for already terminal orders are skipped.
 - Payment compensation:
   - `inventory-service` stores reservation snapshots per order.
   - On `payment.failed`, stock is automatically restored.
   - On `payment.completed`, reservation snapshot is cleared.
+- Retry + DLT for payment processing:
+  - `payment-service` uses retry topics for transient runtime errors and routes exhausted records to DLT.
+  - DLT handler emits `payment.failed` so saga converges to a final state.
 
 ## Services
 
@@ -229,6 +235,12 @@ sequenceDiagram
 docker compose up -d
 ```
 
+Run full platform (infra + all app containers):
+
+```bash
+docker compose --profile apps up -d --build
+```
+
 Infra endpoints:
 - Kafka: `localhost:9092`
 - MongoDB: `localhost:27017`
@@ -236,6 +248,7 @@ Infra endpoints:
 - Elasticsearch: `http://localhost:9200`
 - Logstash TCP input: `localhost:5044`
 - Kibana: `http://localhost:5601`
+- Kafka UI: `http://localhost:8088`
 
 ## Build
 
@@ -257,12 +270,20 @@ Start each service in separate terminals:
 ./mvnw -f user-service/pom.xml spring-boot:run
 ```
 
+Note: If you are running app containers via `docker compose --profile apps up`, do not start these local JVM commands in parallel.
+
 ## GraphQL Endpoint
 
 - Direct URL: `http://localhost:8080/graphql`
 - Through Gateway: `http://localhost:8090/graphql`
 - GraphiQL direct: `http://localhost:8080/graphiql`
 - GraphiQL through gateway: `http://localhost:8090/graphiql`
+
+## Docker Healthchecks
+
+- Infra and app containers include healthchecks.
+- App containers use `/actuator/health`.
+- Compose `depends_on: condition: service_healthy` ensures services wait for required dependencies.
 
 ## API Gateway Notes
 
@@ -365,3 +386,28 @@ Each service now writes structured JSON logs to Logstash over TCP (`localhost:50
    - `correlationId : "<X-Correlation-Id value>"`
 
 Kafka metadata (`topic`, `partition`, `offset`, `key`, `payload`) is included inside log messages emitted by producers/consumers.
+
+## Retry and DLT Test (Advanced Kafka)
+
+Use this order payload to simulate transient payment failure and trigger retry + DLT path:
+
+```graphql
+mutation {
+  placeOrder(input: {
+    userId: "user-1"
+    items: [{ productId: "<PRODUCT_ID>", quantity: 1, unitPrice: 777.77 }]
+  })
+}
+```
+
+Expected behavior:
+- `payment.requested` is retried through retry topics.
+- After max retries, message reaches DLT.
+- DLT handler publishes `payment.failed`.
+- `order-service` marks order `PAYMENT_FAILED`.
+- `inventory-service` restores reserved stock from reservation snapshot.
+
+Verify in Kibana:
+- `service : "payment-service" AND message : "*DLT*"`
+- `service : "payment-service" AND message : "*retry*"`
+- `service : "order-service" AND message : "*PAYMENT_FAILED*"`
