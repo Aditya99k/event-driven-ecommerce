@@ -7,9 +7,9 @@ type Query {
 }
 
 type Mutation {
-  upsertProduct(input: UpsertProductInput!): ID!
-  placeOrder(input: PlaceOrderInput!): ID!
-  upsertUser(input: UpsertUserInput!): ID!
+  upsertProduct(input: UpsertProductInput!, idempotencyKey: String!): ID!
+  placeOrder(input: PlaceOrderInput!, idempotencyKey: String!): ID!
+  upsertUser(input: UpsertUserInput!, idempotencyKey: String!): ID!
 }
 
 type Product {

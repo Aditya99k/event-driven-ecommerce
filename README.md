@@ -328,7 +328,7 @@ mutation {
     description: "Wireless over-ear"
     price: 199.99
     stock: 15
-  })
+  }, idempotencyKey: "upsert-product-001")
 }
 ```
 
@@ -337,7 +337,7 @@ mutation {
   placeOrder(input: {
     userId: "user-1"
     items: [{ productId: "<PRODUCT_ID>", quantity: 1, unitPrice: 199.99 }]
-  })
+  }, idempotencyKey: "place-order-001")
 }
 ```
 
@@ -357,7 +357,7 @@ mutation {
   upsertUser(input: {
     name: "Aditya"
     email: "aditya@example.com"
-  })
+  }, idempotencyKey: "upsert-user-001")
 }
 ```
 
@@ -386,6 +386,12 @@ Each service now writes structured JSON logs to Logstash over TCP (`localhost:50
    - `correlationId : "<X-Correlation-Id value>"`
 
 Kafka metadata (`topic`, `partition`, `offset`, `key`, `payload`) is included inside log messages emitted by producers/consumers.
+
+## Mutation Idempotency Keys
+
+- GraphQL mutations `upsertProduct`, `upsertUser`, and `placeOrder` require `idempotencyKey`.
+- Retry with the same key + same payload returns the same response ID without producing duplicate Kafka events.
+- Reusing the same key with a different payload returns an error.
 
 ## Retry and DLT Test (Advanced Kafka)
 

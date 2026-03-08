@@ -64,17 +64,20 @@ public class EcommerceGraphqlController {
     }
 
     @MutationMapping
-    public String upsertProduct(@Argument("input") UpsertProductInput input) {
-        return commandPublisher.upsertProduct(input);
+    public String upsertProduct(@Argument("input") UpsertProductInput input,
+                                @Argument("idempotencyKey") String idempotencyKey) {
+        return commandPublisher.upsertProduct(input, idempotencyKey);
     }
 
     @MutationMapping
-    public String placeOrder(@Argument("input") PlaceOrderInput input) {
-        return commandPublisher.placeOrder(input);
+    public String placeOrder(@Argument("input") PlaceOrderInput input,
+                             @Argument("idempotencyKey") String idempotencyKey) {
+        return commandPublisher.placeOrder(input, idempotencyKey);
     }
 
     @MutationMapping
-    public String upsertUser(@Argument("input") UpsertUserInput input) {
-        return commandPublisher.upsertUser(input);
+    public String upsertUser(@Argument("input") UpsertUserInput input,
+                             @Argument("idempotencyKey") String idempotencyKey) {
+        return commandPublisher.upsertUser(input, idempotencyKey);
     }
 }
